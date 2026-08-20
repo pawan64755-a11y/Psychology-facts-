@@ -214,6 +214,341 @@
       <label style="margin:0;">Dark mode (white text, dark background)</label>
     </div>
 
+    <div id="customSizeWrap">
+      <label>Adjust Size</label>
+      <div class="size-row">
+        <button type="button" id="sizeMinus" class="secondary size-btn">−</button>
+        <input type="range" id="fontSizeSlider" min="20" max="140" value="60">
+        <button type="button" id="sizePlus" class="secondary size-btn">+</button>
+        <span class="size-value" id="fontSizeValue">60px</span>
+      </div>
+    </div>
+
+    <label>Text Alignment</label>
+    <select id="textAlignMode">
+      <option value="center" selected>Center</option>
+      <option value="left">Left</option>
+      <option value="right">Right</option>
+    </select>
+
+    <button id="generateBtn">Generate Image</button>
+    <button id="downloadBtn" class="secondary">Download PNG</button>
+    <div class="hint" style="margin-top:14px;">Tip: Highlight word ka spelling exactly wahi rakhein jo fact ke andar hai (case-sensitive nahi hai).</div>
+  </div>
+
+  <div class="panel preview-wrap">
+    <canvas id="canvas" width="1080" height="1080"></canvas>
+  </div>
+
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const SIZE = 1080;
+
+const textures = {
+  paper:  { bg1:'#EFE9DC', bg2:'#E4DCC9', ink:'#1E1B16' },
+  linen:  { bg1:'#E8E6E1', bg2:'#D9D6CF', ink:'#26241F' },
+  kraft:  { bg1:'#D9C3A0', bg2:'#C7AC80', ink:'#2B1F14' }
+};
+const darkPalette = { bg1:'#181614', bg2:'#0F0E0C', ink:'#F4F0E8' };
+
+let activeHighlight = '#F2E48A';
+
+document.querySelectorAll('.swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+    activeHighlight = sw.dataset.color;
+    generateImage();
+  });
+});
+
+function addNoise(ctx, w, h, intensity) {
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const data = imgData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const n = (Math.random() - 0.5) * intensity;
+    data[i]   += n;
+    data[i+1] += n;
+    data[i+2] += n;
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function drawBackground(palette) {
+  const grad = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+  grad.addColorStop(0, palette.bg1);
+  grad.addColorStop(1, palette.bg2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  addNoise(ctx, SIZE, SIZE, 10);
+}
+
+// Wrap text into lines that fit maxWidth, return array of {text, words:[{word, width}]}
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let currentLine = [];
+  let currentWidth = 0;
+  const spaceWidth = ctx.measureText(' ').width;
+
+  words.forEach(word => {
+    const w = ctx.measureText(word).width;
+    if (currentWidth + w + (currentLine.length > 0 ? spaceWidth : 0) > maxWidth && currentLine.length > 0) {
+      lines.push(currentLine);
+      currentLine = [word];
+      currentWidth = w;
+    } else {
+      currentLine.push(word);
+      currentWidth += w + (currentLine.length > 1 ? spaceWidth : 0);
+    }
+  });
+  if (currentLine.length) lines.push(currentLine);
+  return lines;
+}
+
+function findFontSizeAndLines(text, maxWidth, mode, customSize) {
+  let fontSize;
+  if (mode === 'small') fontSize = 46;
+  else if (mode === 'medium') fontSize = 60;
+  else if (mode === 'large') fontSize = 76;
+  else if (mode === 'custom') fontSize = customSize || 60;
+  else {
+    // auto mode: start big, shrink until it fits within height budget
+    fontSize = 84;
+  }
+
+  let lines;
+  const maxHeight = 620; // vertical budget for text block
+  while (fontSize > 28) {
+    ctx.font = `bold ${fontSize}px Georgia, 'Times New Roman', serif`;
+    lines = wrapText(ctx, text, maxWidth);
+    const lineHeight = fontSize * 138 / 1000 * 1.0;
+    const totalHeight = lines.length * fontSize * 1.35;
+    if (totalHeight <= maxHeight || mode !== 'auto') break;
+    fontSize -= 2;
+  }
+  ctx.font = `bold ${fontSize}px Georgia, 'Times New Roman', serif`;
+  lines = wrapText(ctx, text, maxWidth);
+  return { fontSize, lines };
+}
+
+function generateImage() {
+  const rawText = document.getElementById('factText').value.trim() || 'Type a psychology fact...';
+  const highlightWord = document.getElementById('highlightWord').value.trim();
+  const isDark = document.getElementById('darkMode').checked;
+  const textureKey = document.getElementById('textureStyle').value;
+  const fontSizeMode = 'custom';
+  const customSize = parseInt(document.getElementById('fontSizeSlider').value, 10);
+  const textAlignMode = document.getElementById('textAlignMode').value;
+
+  const palette = isDark ? darkPalette : textures[textureKey];
+  drawBackground(palette);
+
+  const maxWidth = SIZE - 260;
+  const margin = (SIZE - maxWidth) / 2;
+  const { fontSize, lines } = findFontSizeAndLines(rawText, maxWidth, fontSizeMode, customSize);
+  const lineHeight = fontSize * 1.35;
+  const totalHeight = lines.length * lineHeight;
+  let startY = (SIZE - totalHeight) / 2 + fontSize * 0.75;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `bold ${fontSize}px Georgia, 'Times New Roman', serif`;
+
+  const hl = highlightWord.toLowerCase();
+
+  lines.forEach((lineWords, idx) => {
+    const y = startY + idx * lineHeight;
+    const lineText = lineWords.join(' ');
+    const lineWidth = ctx.measureText(lineText).width;
+    let x;
+    if (textAlignMode === 'left') x = margin;
+    else if (textAlignMode === 'right') x = SIZE - margin - lineWidth;
+    else x = SIZE / 2 - lineWidth / 2;
+
+    lineWords.forEach((word, wIdx) => {
+      const wordWidth = ctx.measureText(word).width;
+      const spaceWidth = ctx.measureText(' ').width;
+
+      if (hl && word.toLowerCase().replace(/[.,!?]/g,'') === hl.replace(/[.,!?]/g,'')) {
+        const pad = fontSize * 0.12;
+        ctx.fillStyle = activeHighlight;
+        ctx.fillRect(x - pad, y - fontSize * 0.78, wordWidth + pad * 2, fontSize * 1.08);
+      }
+
+      ctx.fillStyle = palette.ink;
+      ctx.textAlign = 'left';
+      ctx.fillText(word, x, y);
+      ctx.textAlign = 'center';
+
+      x += wordWidth + spaceWidth;
+    });
+  });
+
+  // subtle credit / mark at bottom
+  ctx.font = `14px Georgia, serif`;
+  ctx.fillStyle = palette.ink;
+  ctx.globalAlpha = 0.35;
+  ctx.textAlign = 'center';
+  ctx.fillText('AttractionCode', SIZE / 2, SIZE - 48);
+  ctx.globalAlpha = 1;
+}
+
+document.getElementById('generateBtn').addEventListener('click', generateImage);
+
+// --- Live preview: regenerate instantly as user changes anything ---
+document.getElementById('factText').addEventListener('input', generateImage);
+document.getElementById('highlightWord').addEventListener('input', generateImage);
+document.getElementById('textureStyle').addEventListener('change', generateImage);
+document.getElementById('darkMode').addEventListener('change', generateImage);
+document.getElementById('textAlignMode').addEventListener('change', generateImage);
+
+const fontSizeSlider = document.getElementById('fontSizeSlider');
+const fontSizeValue = document.getElementById('fontSizeValue');
+
+fontSizeSlider.addEventListener('input', () => {
+  fontSizeValue.textContent = fontSizeSlider.value + 'px';
+  generateImage();
+});
+
+document.getElementById('sizeMinus').addEventListener('click', () => {
+  fontSizeSlider.value = Math.max(20, parseInt(fontSizeSlider.value, 10) - 2);
+  fontSizeValue.textContent = fontSizeSlider.value + 'px';
+  generateImage();
+});
+document.getElementById('sizePlus').addEventListener('click', () => {
+  fontSizeSlider.value = Math.min(140, parseInt(fontSizeSlider.value, 10) + 2);
+  fontSizeValue.textContent = fontSizeSlider.value + 'px';
+  generateImage();
+});
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'psychology-fact.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// generate once on load
+generateImage();
+</script>
+
+</body>
+</html>
+    font-family:inherit;
+    font-size:0.9rem;
+    border:1px solid var(--line);
+    border-radius:6px;
+    background:#fff;
+  }
+  .toggle-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:16px;
+  }
+  .toggle-row label{margin:0;}
+  button{
+    margin-top:22px;
+    width:100%;
+    padding:13px;
+    border:none;
+    border-radius:6px;
+    background:var(--ink);
+    color:#fff;
+    font-family:inherit;
+    font-size:0.95rem;
+    letter-spacing:0.4px;
+    cursor:pointer;
+  }
+  button:hover{opacity:0.9;}
+  button.secondary{
+    background:transparent;
+    color:var(--ink);
+    border:1px solid var(--ink);
+    margin-top:10px;
+  }
+  .preview-wrap{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:14px;
+  }
+  canvas{
+    width:100%;
+    max-width:480px;
+    border-radius:10px;
+    box-shadow:0 6px 24px rgba(0,0,0,0.15);
+  }
+  .hint{
+    font-size:0.78rem;
+    color:#8a7f6a;
+    line-height:1.4;
+  }
+  input[type=range]{
+    width:100%;
+    accent-color:var(--accent);
+  }
+  .size-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .size-row input[type=range]{flex:1;}
+  .size-btn{
+    margin:0 !important;
+    width:38px;
+    min-width:38px;
+    padding:8px 0 !important;
+    font-size:1.1rem;
+    line-height:1;
+  }
+  .size-value{
+    font-size:0.85rem;
+    color:var(--ink);
+    min-width:48px;
+    text-align:right;
+  }
+</style>
+</head>
+<body>
+
+<h1>Psychology Fact Image</h1>
+<div class="sub">Fact likho, style choose karo, aur ready-made image download karo.</div>
+
+<div class="layout">
+
+  <div class="panel">
+    <label for="factText">Psychology Fact</label>
+    <textarea id="factText" placeholder="Yaha apna psychology fact likhein...">Text_here</textarea>
+
+    <label for="highlightWord">Highlight Word / Phrase (optional)</label>
+    <input type="text" id="highlightWord" placeholder="e.g. doesn't" value="">
+
+    <label>Texture Style</label>
+    <select id="textureStyle">
+      <option value="paper">Paper Cream</option>
+      <option value="linen">Linen Soft Grey</option>
+      <option value="kraft">Kraft Warm Brown</option>
+    </select>
+
+    <label>Highlight Colour</label>
+    <div class="swatches" id="highlightSwatches">
+      <div class="swatch active" style="background:#F2E48A" data-color="#F2E48A"></div>
+      <div class="swatch" style="background:#F4B6C2" data-color="#F4B6C2"></div>
+      <div class="swatch" style="background:#B8E0D2" data-color="#B8E0D2"></div>
+      <div class="swatch" style="background:#C9D6EA" data-color="#C9D6EA"></div>
+      <div class="swatch" style="background:#E8C4A0" data-color="#E8C4A0"></div>
+    </div>
+
+    <div class="toggle-row">
+      <input type="checkbox" id="darkMode">
+      <label style="margin:0;">Dark mode (white text, dark background)</label>
+    </div>
+
     <div class="row">
       <div>
         <label>Font Size</label>
