@@ -157,6 +157,16 @@
     width:100%;
     accent-color:var(--accent);
   }
+  .style-preview{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    height:44px;
+    border-radius:6px;
+    border:1px solid var(--line);
+    font-size:0.82rem;
+    letter-spacing:0.3px;
+  }
   .size-row{
     display:flex;
     align-items:center;
@@ -193,26 +203,11 @@
     <label for="highlightWord">Highlight Word / Phrase (optional)</label>
     <input type="text" id="highlightWord" placeholder="e.g. doesn't" value="">
 
-    <label>Texture Style</label>
-    <select id="textureStyle">
-      <option value="paper">Paper Cream</option>
-      <option value="linen">Linen Soft Grey</option>
-      <option value="kraft">Kraft Warm Brown</option>
-    </select>
-
-    <label>Highlight Colour</label>
-    <div class="swatches" id="highlightSwatches">
-      <div class="swatch active" style="background:#F2E48A" data-color="#F2E48A"></div>
-      <div class="swatch" style="background:#F4B6C2" data-color="#F4B6C2"></div>
-      <div class="swatch" style="background:#B8E0D2" data-color="#B8E0D2"></div>
-      <div class="swatch" style="background:#C9D6EA" data-color="#C9D6EA"></div>
-      <div class="swatch" style="background:#E8C4A0" data-color="#E8C4A0"></div>
+    <label>Background + Text Style</label>
+    <div class="style-preview" id="stylePreview">
+      <span id="styleName">Style 1 / 30</span>
     </div>
-
-    <div class="toggle-row">
-      <input type="checkbox" id="darkMode">
-      <label style="margin:0;">Dark mode (white text, dark background)</label>
-    </div>
+    <button type="button" id="shuffleBtn" class="secondary" style="margin-top:10px;">🔀 Shuffle Style</button>
 
     <div id="customSizeWrap">
       <label>Adjust Size</label>
@@ -247,23 +242,60 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const SIZE = 1080;
 
-const textures = {
-  paper:  { bg1:'#EFE9DC', bg2:'#E4DCC9', ink:'#1E1B16' },
-  linen:  { bg1:'#E8E6E1', bg2:'#D9D6CF', ink:'#26241F' },
-  kraft:  { bg1:'#D9C3A0', bg2:'#C7AC80', ink:'#2B1F14' }
-};
-const darkPalette = { bg1:'#181614', bg2:'#0F0E0C', ink:'#F4F0E8' };
+// 30 curated background + text + highlight combinations
+const stylePresets = [
+  { name:'Paper Cream',        bg1:'#EFE9DC', bg2:'#E4DCC9', ink:'#1E1B16', hl:'#F2E48A' },
+  { name:'Linen Grey',         bg1:'#E8E6E1', bg2:'#D9D6CF', ink:'#26241F', hl:'#F4B6C2' },
+  { name:'Kraft Brown',        bg1:'#D9C3A0', bg2:'#C7AC80', ink:'#2B1F14', hl:'#B8E0D2' },
+  { name:'Midnight Ink',       bg1:'#181614', bg2:'#0F0E0C', ink:'#F4F0E8', hl:'#F2E48A' },
+  { name:'Rosewood Dusk',      bg1:'#2B1B1F', bg2:'#1A0F12', ink:'#F3E6E4', hl:'#E8A0A0' },
+  { name:'Sage Whisper',       bg1:'#DDE5D8', bg2:'#C7D3BF', ink:'#26301F', hl:'#F4B6C2' },
+  { name:'Dusty Blush',        bg1:'#F0DCD6', bg2:'#E3C4BB', ink:'#3A241E', hl:'#C9D6EA' },
+  { name:'Slate Blue Night',   bg1:'#1B2430', bg2:'#10161E', ink:'#EDE9DF', hl:'#E8C4A0' },
+  { name:'Terracotta Warm',    bg1:'#E3B08C', bg2:'#CE9066', ink:'#2B1710', hl:'#F2E48A' },
+  { name:'Charcoal Rose',      bg1:'#211C1E', bg2:'#150F11', ink:'#F2E7E4', hl:'#E8A0A0' },
+  { name:'Ivory Sand',         bg1:'#F5EFE2', bg2:'#E9DFC8', ink:'#1E1B16', hl:'#B8E0D2' },
+  { name:'Plum Twilight',      bg1:'#2A1F2E', bg2:'#190F1D', ink:'#EFE4EE', hl:'#F2E48A' },
+  { name:'Sea Mist',           bg1:'#DCE7E4', bg2:'#C4D6D1', ink:'#17251F', hl:'#E8C4A0' },
+  { name:'Blush Cream',        bg1:'#F3E3DD', bg2:'#E7CFC5', ink:'#2E1E1B', hl:'#C9D6EA' },
+  { name:'Deep Forest',        bg1:'#16211A', bg2:'#0D1510', ink:'#E8EDE6', hl:'#E8C4A0' },
+  { name:'Warm Grey Editorial',bg1:'#E4E0D8', bg2:'#D2CCBE', ink:'#201D18', hl:'#F4B6C2' },
+  { name:'Amber Dusk',         bg1:'#C98B4E', bg2:'#A96C33', ink:'#241207', hl:'#F4EAD5' },
+  { name:'Navy Ink',           bg1:'#101826', bg2:'#070C15', ink:'#ECE9DF', hl:'#F2E48A' },
+  { name:'Soft Lilac',         bg1:'#E7E1EE', bg2:'#D5CBE3', ink:'#251E2B', hl:'#E8A0A0' },
+  { name:'Cocoa Cream',        bg1:'#E8D9C8', bg2:'#D6C0A5', ink:'#2B1D13', hl:'#B8E0D2' },
+  { name:'Graphite Mint',      bg1:'#1D2420', bg2:'#131813', ink:'#E7EDE9', hl:'#B8E0D2' },
+  { name:'Peach Paper',        bg1:'#F2DFCB', bg2:'#E6C8A9', ink:'#331F12', hl:'#C9D6EA' },
+  { name:'Wine Velvet',        bg1:'#2C141B', bg2:'#1B0B10', ink:'#F1E4E6', hl:'#E8C4A0' },
+  { name:'Stone Blue',         bg1:'#DDE2E6', bg2:'#C6CFD6', ink:'#1B222A', hl:'#E8A0A0' },
+  { name:'Golden Kraft',       bg1:'#D6A85C', bg2:'#BE8B3C', ink:'#251804', hl:'#F4F0E8' },
+  { name:'Ink Blot Grey',      bg1:'#201F1D', bg2:'#151412', ink:'#EDE9E1', hl:'#F4B6C2' },
+  { name:'Rosy Linen',         bg1:'#ECDCD8', bg2:'#DEC3BD', ink:'#291B18', hl:'#B8E0D2' },
+  { name:'Ocean Slate',        bg1:'#182B30', bg2:'#0E1B1F', ink:'#E4EDEE', hl:'#F2E48A' },
+  { name:'Vanilla Bean',       bg1:'#F1E8D6', bg2:'#E2D3B2', ink:'#241C0F', hl:'#E8A0A0' },
+  { name:'Espresso Night',     bg1:'#1C1410', bg2:'#110B08', ink:'#EFE5D8', hl:'#E8C4A0' }
+];
 
-let activeHighlight = '#F2E48A';
+let currentPresetIndex = 0;
+let activeHighlight = stylePresets[0].hl;
 
-document.querySelectorAll('.swatch').forEach(sw => {
-  sw.addEventListener('click', () => {
-    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
-    sw.classList.add('active');
-    activeHighlight = sw.dataset.color;
-    generateImage();
-  });
-});
+function updateStyleLabel() {
+  document.getElementById('styleName').textContent =
+    stylePresets[currentPresetIndex].name + ' (' + (currentPresetIndex + 1) + '/' + stylePresets.length + ')';
+}
+
+function shuffleStyle() {
+  let next;
+  do {
+    next = Math.floor(Math.random() * stylePresets.length);
+  } while (next === currentPresetIndex && stylePresets.length > 1);
+  currentPresetIndex = next;
+  activeHighlight = stylePresets[currentPresetIndex].hl;
+  updateStyleLabel();
+  generateImage();
+}
+
+document.getElementById('shuffleBtn').addEventListener('click', shuffleStyle);
 
 function addNoise(ctx, w, h, intensity) {
   const imgData = ctx.getImageData(0, 0, w, h);
@@ -338,13 +370,11 @@ function findFontSizeAndLines(text, maxWidth, mode, customSize) {
 function generateImage() {
   const rawText = document.getElementById('factText').value.trim() || 'Type a psychology fact...';
   const highlightWord = document.getElementById('highlightWord').value.trim();
-  const isDark = document.getElementById('darkMode').checked;
-  const textureKey = document.getElementById('textureStyle').value;
   const fontSizeMode = 'custom';
   const customSize = parseInt(document.getElementById('fontSizeSlider').value, 10);
   const textAlignMode = document.getElementById('textAlignMode').value;
 
-  const palette = isDark ? darkPalette : textures[textureKey];
+  const palette = stylePresets[currentPresetIndex];
   drawBackground(palette);
 
   const maxWidth = SIZE - 260;
@@ -402,8 +432,6 @@ document.getElementById('generateBtn').addEventListener('click', generateImage);
 // --- Live preview: regenerate instantly as user changes anything ---
 document.getElementById('factText').addEventListener('input', generateImage);
 document.getElementById('highlightWord').addEventListener('input', generateImage);
-document.getElementById('textureStyle').addEventListener('change', generateImage);
-document.getElementById('darkMode').addEventListener('change', generateImage);
 document.getElementById('textAlignMode').addEventListener('change', generateImage);
 
 const fontSizeSlider = document.getElementById('fontSizeSlider');
@@ -433,6 +461,7 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
 });
 
 // generate once on load
+updateStyleLabel();
 generateImage();
 </script>
 
